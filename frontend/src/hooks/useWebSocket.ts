@@ -17,11 +17,14 @@ export function useWebSocket(onMessage?: MessageHandler) {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const reconnectAttempts = useRef(0);
   const isConnected = useAppSelector((s) => s.user.isConnected);
-  const onMessageRef = useRef(onMessage);
-  onMessageRef.current = onMessage;
 
-  // Declare scheduleReconnect ref first so connect can reference it
-  const scheduleReconnectRef = useRef<() => void>(() => {});
+  // Stable refs for callbacks — updated via useEffect to avoid render-time mutation
+  const onMessageRef = useRef<MessageHandler | undefined>(undefined);
+  const scheduleReconnectRef = useRef<(() => void) | undefined>(undefined);
+
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+  }, [onMessage]);
 
   const connect = useCallback(() => {
     const token = getAccessToken();
@@ -70,7 +73,7 @@ export function useWebSocket(onMessage?: MessageHandler) {
     ws.onclose = () => {
       dispatch(setConnected(false));
       dispatch(setStatus('idle'));
-      scheduleReconnectRef.current();
+      scheduleReconnectRef.current?.();
     };
 
     ws.onerror = () => {
@@ -85,8 +88,9 @@ export function useWebSocket(onMessage?: MessageHandler) {
     reconnectTimer.current = setTimeout(connect, delay);
   }, [connect]);
 
-  // Keep the ref up to date
-  scheduleReconnectRef.current = scheduleReconnect;
+  useEffect(() => {
+    scheduleReconnectRef.current = scheduleReconnect;
+  }, [scheduleReconnect]);
 
   const send = useCallback((msg: object) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {

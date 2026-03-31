@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/joho/godotenv"
 	"github.com/sharafath/bumbleo/internal/auth"
 	"github.com/sharafath/bumbleo/internal/config"
 	"github.com/sharafath/bumbleo/internal/db"
@@ -20,6 +21,11 @@ import (
 )
 
 func main() {
+	// Load .env file in local development (silently ignored if not found)
+	if err := godotenv.Load("../../.env"); err != nil {
+		_ = godotenv.Load(".env") // fallback when running from backend/ dir
+	}
+
 	cfg := config.Load()
 
 	// Init dependencies
