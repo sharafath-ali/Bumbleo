@@ -66,25 +66,163 @@ docker compose up --build
 
 ## Local Development (without Docker)
 
-### Prerequisites
-- Node.js 20+
-- Go 1.22+
-- MongoDB running locally
-- Redis running locally
+This guide runs everything on your machine — **no Docker needed**.
 
-### Backend
+---
+
+### Step 1 — Install Prerequisites
+
+| Tool | Version | Download |
+|---|---|---|
+| **Node.js** | 20+ | [nodejs.org](https://nodejs.org) |
+| **Go** | 1.22+ | [go.dev/dl](https://go.dev/dl/) |
+| **MongoDB** | 7 Community | [mongodb.com/try/download/community](https://www.mongodb.com/try/download/community) |
+| **Redis** | 5+ (Windows port) | [github.com/tporadowski/redis/releases](https://github.com/tporadowski/redis/releases) |
+
+---
+
+### Step 2 — Install & Start MongoDB
+
+1. Download **MongoDB 7 Community Server** → Windows → `.msi`
+2. Run installer → choose **Complete**
+3. ✅ Check **"Install MongoDB as a Service"** during setup
+4. Finish install — it starts automatically
+
+**Verify MongoDB is running:**
+```powershell
+mongod --version
+# Connect test:
+mongosh --eval "db.runCommand({ ping: 1 })"
+# Expected: { ok: 1 }
+```
+
+If not running, start it manually:
+```powershell
+net start MongoDB
+```
+
+---
+
+### Step 3 — Install & Start Redis
+
+1. Download the latest `.msi` from [github.com/tporadowski/redis/releases](https://github.com/tporadowski/redis/releases)
+   - e.g. `Redis-x64-5.0.14.1.msi`
+2. Run installer → ✅ Check **"Add Redis to PATH"**
+3. Redis installs as a Windows service and starts automatically
+
+**Verify Redis is running:**
+```powershell
+redis-cli ping
+# Expected: PONG
+```
+
+If not running, start it manually:
+```powershell
+net start Redis
+```
+
+---
+
+### Step 4 — Configure Environment
 
 ```bash
+# From the root Bumbleo/ folder
+cp .env.example .env
+```
+
+Open `.env` and fill in:
+
+```env
+# Required — generate a strong random secret
+JWT_SECRET=your-random-secret-min-32-chars
+
+# Required — your Resend (or Gmail) credentials
+SMTP_HOST=smtp.resend.com
+SMTP_PORT=587
+SMTP_USER=resend
+SMTP_PASS=re_your_api_key
+SMTP_FROM=onboarding@resend.dev
+
+# Leave everything else as-is for local development
+```
+
+> **Generate JWT_SECRET (PowerShell):**
+> ```powershell
+> -join ((65..90)+(97..122)+(48..57) | Get-Random -Count 48 | ForEach-Object {[char]$_})
+> ```
+
+---
+
+### Step 5 — Run the Backend
+
+```powershell
 cd backend
 go mod tidy
 go run ./cmd/server
 ```
 
-### Frontend
+**Expected output:**
+```
+✅  MongoDB connected: bumbleo
+✅  Redis connected: localhost:6379
+🚀  Bumbleo server running on :8080 (env: development)
+```
 
-```bash
+---
+
+### Step 6 — Run the Frontend
+
+Open a **new terminal**:
+
+```powershell
 cd frontend
 npm install
+npm run dev
+```
+
+**Expected output:**
+```
+▲ Next.js 15.x
+- Local: http://localhost:3000
+```
+
+---
+
+### Step 7 — Open the App
+
+| Service | URL |
+|---|---|
+| **Frontend** | http://localhost:3000 |
+| **Backend API** | http://localhost:8080 |
+| **Health check** | http://localhost:8080/health |
+
+---
+
+### Common Errors & Fixes
+
+| Error | Cause | Fix |
+|---|---|---|
+| `MongoDB ping error: connection refused :27017` | MongoDB service not running | `net start MongoDB` |
+| `Redis connect error: connection refused :6379` | Redis service not running | `net start Redis` |
+| `go: command not found` | Go not in PATH | Restart terminal after Go install |
+| `npm: not recognized` | Node.js not installed | Install from nodejs.org |
+| Frontend shows CORS error | Backend not running | Start Go server first |
+
+---
+
+### All 3 running at once (summary)
+
+```powershell
+# Terminal 1 — check services
+net start MongoDB
+net start Redis
+
+# Terminal 2 — backend
+cd C:\path\to\Bumbleo\backend
+go run ./cmd/server
+
+# Terminal 3 — frontend
+cd C:\path\to\Bumbleo\frontend
 npm run dev
 ```
 
