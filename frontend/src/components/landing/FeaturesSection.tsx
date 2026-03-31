@@ -1,3 +1,5 @@
+'use client';
+
 export default function FeaturesSection() {
   const features = [
     { icon: '⚡', title: 'Instant Matching', desc: 'Sub-second matchmaking powered by Redis queues. Never wait for a stranger.' },
