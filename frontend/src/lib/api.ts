@@ -7,8 +7,15 @@ let accessToken: string | null = null;
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
-  if (token) localStorage.setItem('accessToken', token);
-  else localStorage.removeItem('accessToken');
+  if (token) {
+    localStorage.setItem('accessToken', token);
+    // Also set a cookie so Next.js middleware (server-side) can read it for route protection
+    document.cookie = `accessToken=${token}; path=/; max-age=900; SameSite=Lax`;
+  } else {
+    localStorage.removeItem('accessToken');
+    // Clear the cookie too
+    document.cookie = 'accessToken=; path=/; max-age=0; SameSite=Lax';
+  }
 }
 
 export function getAccessToken(): string | null {

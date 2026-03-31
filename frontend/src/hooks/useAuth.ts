@@ -102,6 +102,8 @@ export function useAuth() {
     if (!token) return;
     const payload = getTokenPayload(token);
     if (!payload) return;
+    // Re-set cookie (may have expired) so middleware can protect routes
+    setAccessToken(token);
     dispatch(
       setCredentials({
         accessToken: token,
