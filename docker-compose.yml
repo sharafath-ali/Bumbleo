@@ -60,7 +60,7 @@ services:
     container_name: bumbleo-mongodb
     restart: unless-stopped
     ports:
-      - "27017:27017"
+      - "27018:27017"
     volumes:
       - mongo-data:/data/db
     networks:
@@ -80,14 +80,16 @@ services:
       - bumbleo-net
 
   # ── Coturn (STUN/TURN) ────────────────────────────────────────────────────────
-  coturn:
-    image: coturn/coturn:latest
-    container_name: bumbleo-coturn
-    restart: unless-stopped
-    network_mode: host        # TURN needs host networking for UDP
-    volumes:
-      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
-    command: -c /etc/coturn/turnserver.conf
+  # NOTE: coturn requires network_mode:host which only works on Linux.
+  # On Windows/Mac Docker Desktop, run coturn natively or use a hosted TURN service.
+  # coturn:
+  #   image: coturn/coturn:latest
+  #   container_name: bumbleo-coturn
+  #   restart: unless-stopped
+  #   network_mode: host
+  #   volumes:
+  #     - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+  #   command: -c /etc/coturn/turnserver.conf
 
 volumes:
   mongo-data:
