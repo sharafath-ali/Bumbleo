@@ -29,14 +29,15 @@ export default function ChatPage() {
     if (!user) router.push('/auth/login');
   }, [user, router]);
 
-  // WebRTC signaling message handler
+  const handleSignalRef = useRef<((msg: WSMessage) => void) | null>(null);
+
+  // WebRTC signaling message handler — uses ref to avoid stale closure
   const handleWSMessage = useCallback(
     (msg: WSMessage) => {
       if (['offer', 'answer', 'ice_candidate'].includes(msg.type)) {
-        handleSignal(msg);
+        handleSignalRef.current?.(msg);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
 
@@ -47,6 +48,11 @@ export default function ChatPage() {
     remoteVideoRef,
     { send, role }
   );
+
+  // Keep ref in sync with latest handleSignal
+  useEffect(() => {
+    handleSignalRef.current = handleSignal;
+  }, [handleSignal]);
 
   // Start local camera preview on mount
   useEffect(() => {

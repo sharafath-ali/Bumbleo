@@ -108,7 +108,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		Email:        req.Email,
 		Username:     req.Username,
 		PasswordHash: string(hash),
-		IsVerified:   false,
+		IsVerified:   true, // auto-verified (email verification disabled)
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -118,17 +118,9 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := auth.GenerateVerificationToken(ctx, user.ID.Hex())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to generate verification token")
-		return
-	}
-
-	// Send email in background
-	go auth.SendConfirmationEmail(user.Email, token)
-
+	// Email verification disabled
 	writeJSON(w, http.StatusCreated, map[string]string{
-		"message": "Account created. Please check your email to verify your account.",
+		"message": "Account created successfully. You can now log in.",
 	})
 }
 
@@ -183,10 +175,8 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !user.IsVerified {
-		writeError(w, http.StatusForbidden, "please verify your email before logging in")
-		return
-	}
+	// Email verification check disabled
+	// if !user.IsVerified { writeError(...) }
 
 	userIDHex := user.ID.Hex()
 	accessToken, err := auth.GenerateAccessToken(userIDHex, user.Email, user.Username, user.IsVerified)

@@ -23,7 +23,7 @@ import (
 
 func main() {
 	// Load .env file in local development (silently ignored if not found)
-	if err := godotenv.Load("../../.env"); err != nil {
+	if err := godotenv.Load("../.env"); err != nil {
 		_ = godotenv.Load(".env") // fallback when running from backend/ dir
 	}
 
@@ -45,7 +45,7 @@ func main() {
 	// Router
 	r := chi.NewRouter()
 
-	r.Use(chimiddleware.Logger)
+	r.Use(middleware.RequestLogger)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(chimiddleware.Timeout(30 * time.Second))
 	r.Use(cors.Handler(cors.Options{
