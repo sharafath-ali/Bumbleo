@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -98,6 +99,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
 	if err != nil {
+		log.Printf("❌ Register - bcrypt error: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to hash password")
 		return
 	}
@@ -114,6 +116,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := col.InsertOne(ctx, user); err != nil {
+		log.Printf("❌ Register - InsertOne error: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to create user")
 		return
 	}
@@ -181,17 +184,20 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	userIDHex := user.ID.Hex()
 	accessToken, err := auth.GenerateAccessToken(userIDHex, user.Email, user.Username, user.IsVerified)
 	if err != nil {
+		log.Printf("❌ Login - GenerateAccessToken error: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to generate access token")
 		return
 	}
 
 	refreshToken, err := auth.GenerateRefreshToken(userIDHex)
 	if err != nil {
+		log.Printf("❌ Login - GenerateRefreshToken error: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to generate refresh token")
 		return
 	}
 
 	if err := auth.StoreRefreshToken(ctx, userIDHex, refreshToken); err != nil {
+		log.Printf("❌ Login - StoreRefreshToken error: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to store refresh token")
 		return
 	}
