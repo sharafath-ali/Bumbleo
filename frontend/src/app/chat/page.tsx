@@ -11,6 +11,7 @@ import VideoGrid from '@/components/chat/VideoGrid';
 import ChatControls from '@/components/chat/ChatControls';
 import TextChat from '@/components/chat/TextChat';
 import StatusBar from '@/components/chat/StatusBar';
+import UserProfileMenu from '@/components/ui/UserProfileMenu';
 import { WSMessage } from '@/types';
 
 export default function ChatPage() {
@@ -109,6 +110,7 @@ export default function ChatPage() {
           <Link href="/">
             <button className="btn-ghost" style={{ padding: '8px 16px', fontSize: 13 }}>← Home</button>
           </Link>
+          <UserProfileMenu />
         </div>
       </nav>
 
