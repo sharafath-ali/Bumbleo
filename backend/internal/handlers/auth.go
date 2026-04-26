@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -202,14 +203,20 @@ func Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	isProd := os.Getenv("ENV") == "production"
+	sameSite := http.SameSiteLaxMode
+	if isProd {
+		sameSite = http.SameSiteNoneMode
+	}
+
 	// Set refresh token in httpOnly cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     "refreshToken",
 		Value:    refreshToken,
 		Path:     "/api/auth",
 		HttpOnly: true,
-		Secure:   false, // set to true in production
-		SameSite: http.SameSiteStrictMode,
+		Secure:   isProd,
+		SameSite: sameSite,
 		MaxAge:   int((7 * 24 * time.Hour).Seconds()),
 	})
 
@@ -268,13 +275,19 @@ func RefreshToken(w http.ResponseWriter, r *http.Request) {
 	newRefresh, _ := auth.GenerateRefreshToken(claims.UserID)
 	auth.StoreRefreshToken(ctx, claims.UserID, newRefresh)
 
+	isProd := os.Getenv("ENV") == "production"
+	sameSite := http.SameSiteLaxMode
+	if isProd {
+		sameSite = http.SameSiteNoneMode
+	}
+
 	http.SetCookie(w, &http.Cookie{
 		Name:     "refreshToken",
 		Value:    newRefresh,
 		Path:     "/api/auth",
 		HttpOnly: true,
-		Secure:   false,
-		SameSite: http.SameSiteStrictMode,
+		Secure:   isProd,
+		SameSite: sameSite,
 		MaxAge:   int((7 * 24 * time.Hour).Seconds()),
 	})
 
