@@ -270,7 +270,36 @@ Bumbleo/
 
 ---
 
-## WebSocket Protocol
+## 🔴 Redis Architecture
+
+Redis is used for three specific purposes — **all ephemeral data** that doesn't belong in MongoDB.
+
+| Use Case | File | Redis Structure | TTL |
+|---|---|---|---|
+| 🔐 Refresh tokens | `internal/auth/tokens.go` | String `SET/GET/DEL` | 7 days |
+| 🔐 Email verification tokens | `internal/auth/tokens.go` | String `SET/GET/DEL` | 24 h |
+| 🔐 Password reset tokens | `internal/auth/tokens.go` | String `SET/GET/DEL` | 1 h |
+| 🎲 Matchmaking queue | `internal/matchmaking/queue.go` | List `RPUSH/LPOP` | none |
+| 🎲 Active room mapping | `internal/matchmaking/queue.go` | Hash `HSET/HGETALL` | 2 h |
+| 🛡️ Rate limiting | `internal/middleware/ratelimit.go` | Counter `INCR/EXPIRE` | 15 min |
+
+### Full key space
+
+```
+bumbleo:
+├── verify:<hex>       → userID        (24h)    email verification link
+├── reset:<hex>        → userID        (1h)     password reset link
+├── refresh:<userID>   → jwt-string    (7d)     active refresh token
+├── queue              → [sessionID…]  (none)   matchmaking waiting list
+├── room:<roomID>      → {peerA,peerB} (2h)     matched room members
+└── rl:auth:<ip>       → count         (15min)  rate limit counter
+```
+
+> See [`backend/README.md`](./backend/README.md#-redis-architecture) for full implementation details, Redis commands, and code snippets.
+
+---
+
+## 🔌 WebSocket Protocol
 
 ```
 Client → Server:

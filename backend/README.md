@@ -189,6 +189,210 @@ go mod verify
 
 ---
 
+## 🔴 Redis Architecture
+
+Redis is used as a **fast, ephemeral key-value store** for three distinct purposes.
+None of this data needs to be permanent — tokens expire, queues drain, rate-limit windows reset.
+MongoDB handles all permanent data (users, reports).
+
+---
+
+### 1. 🔐 Token Store — `internal/auth/tokens.go`
+
+Three types of short-lived tokens, all using the same `SET key value EX ttl` pattern.
+
+#### Key Schema
+
+| Key Pattern | Value | TTL | Purpose |
+|---|---|---|---|
+| `bumbleo:verify:<random-64-hex>` | `userID` | **24 h** | Email verification link |
+| `bumbleo:reset:<random-64-hex>` | `userID` | **1 h** | Password reset link |
+| `bumbleo:refresh:<userID>` | JWT refresh token string | **7 days** | Active session tracking |
+
+#### Redis Commands Used
+
+```
+# Login / register
+SET bumbleo:refresh:<userID>  <jwt-refresh-token>  EX 604800
+
+# On /api/auth/refresh
+GET bumbleo:refresh:<userID>        ← validate stored token matches request
+SET bumbleo:refresh:<userID>  <new-token>  EX 604800   ← rotate
+
+# On /api/auth/logout
+DEL bumbleo:refresh:<userID>        ← instant revocation
+
+# Email verification
+SET bumbleo:verify:<token>  <userID>  EX 86400
+GET bumbleo:verify:<token>           ← redeem
+DEL bumbleo:verify:<token>           ← one-time use
+
+# Password reset
+SET bumbleo:reset:<token>  <userID>  EX 3600
+GET bumbleo:reset:<token>
+DEL bumbleo:reset:<token>
+```
+
+#### Implementation
+
+```go
+// internal/auth/tokens.go
+
+func StoreRefreshToken(ctx, userID, token string) error {
+    key := "bumbleo:refresh:" + userID
+    return rdb.Set(ctx, key, token, 7*24*time.Hour).Err()
+}
+
+func GetRefreshToken(ctx, userID string) (string, error) {
+    return rdb.Get(ctx, "bumbleo:refresh:"+userID).Result()
+}
+
+func DeleteRefreshToken(ctx, userID string) error {
+    return rdb.Del(ctx, "bumbleo:refresh:"+userID).Err()
+}
+```
+
+> **Why Redis and not MongoDB?**  
+> O(1) key lookup vs. collection scan. TTL is native — no cron job needed for cleanup.
+> A single `DEL` call instantly revokes a token across all server instances.
+
+---
+
+### 2. 🎲 Matchmaking Queue — `internal/matchmaking/queue.go`
+
+Uses two Redis data structures:
+- A **List** (`LPUSH / RPUSH / LPOP`) as the waiting queue
+- A **Hash** (`HSET / HGETALL`) to store the matched room mapping
+
+#### Key Schema
+
+| Key Pattern | Type | Value | TTL | Purpose |
+|---|---|---|---|---|
+| `bumbleo:queue` | **List** | `[sessionID, sessionID, ...]` | none | Waiting users in order |
+| `bumbleo:room:<roomID>` | **Hash** | `{ peerA, peerB, startedAt }` | **2 h** | Active room membership |
+
+#### Redis Commands Used
+
+```
+# User clicks "Start"
+LREM bumbleo:queue 0 <sessionID>    ← remove stale entry (safety)
+RPUSH bumbleo:queue <sessionID>     ← join back of queue
+
+# Matching attempt
+LPOP bumbleo:queue                  ← grab oldest waiter
+
+# Match found → create room (pipelined)
+HSET bumbleo:room:<roomID> peerA <idA> peerB <idB> startedAt <unix>
+EXPIRE bumbleo:room:<roomID> 7200
+
+# Chat message relay
+HGETALL bumbleo:room:<roomID>       ← find the other peer's sessionID
+
+# Room cleanup on disconnect
+DEL bumbleo:room:<roomID>
+```
+
+#### Implementation Flow
+
+```
+User A clicks Start
+  └─ RPush("bumbleo:queue", sessionA)
+  └─ tryMatch():
+        LPop("bumbleo:queue") → gets sessionB
+        if sessionB == sessionA → LPush back (alone in queue)
+        else:
+          roomID = uuid.New()
+          Pipeline {
+            HSet("bumbleo:room:<roomID>", "peerA", A, "peerB", B, "startedAt", now)
+            Expire("bumbleo:room:<roomID>", 2h)
+          }
+          send "matched" WebSocket message to A and B
+```
+
+> **Why Redis and not in-memory?**  
+> In production there can be **multiple Go server instances** behind a load balancer.
+> An in-memory queue only works if both users hit the same server instance.
+> Redis is the shared state between all instances — matchmaking works correctly regardless.
+
+---
+
+### 3. 🛡️ Rate Limiting — `internal/middleware/ratelimit.go`
+
+Uses atomic **INCR + EXPIRE** per-IP per-endpoint. No separate scheduler — the TTL acts as the sliding window reset.
+
+#### Key Schema
+
+| Key Pattern | Type | Value | TTL | Limit |
+|---|---|---|---|---|
+| `bumbleo:rl:auth:<ip>` | **String (counter)** | request count | **15 min** | 10 req/window |
+
+#### Redis Commands Used
+
+```
+# Every request to a rate-limited endpoint (pipelined for speed)
+INCR  bumbleo:rl:auth:192.168.1.1    ← atomic increment, returns new count
+EXPIRE bumbleo:rl:auth:192.168.1.1 900  ← reset window (only sets if not already set)
+
+# count > 10 → 429 Too Many Requests
+# count ≤ 10 → pass to handler
+```
+
+#### Implementation
+
+```go
+// internal/middleware/ratelimit.go
+
+func RateLimit(key string, limit int, window time.Duration) func(http.Handler) http.Handler {
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            ip := realIP(r)
+            redisKey := fmt.Sprintf("bumbleo:rl:%s:%s", key, ip)
+
+            pipe := rdb.Pipeline()
+            incr := pipe.Incr(ctx, redisKey)
+            pipe.Expire(ctx, redisKey, window)
+            pipe.Exec(ctx)
+
+            if incr.Val() > int64(limit) {
+                http.Error(w, `{"error":"too many requests"}`, 429)
+                return
+            }
+            next.ServeHTTP(w, r)
+        })
+    }
+}
+```
+
+Applied to these routes in `main.go`:
+
+```go
+authLimiter := middleware.RateLimit("auth", 10, 15*time.Minute)
+r.With(authLimiter).Post("/api/auth/register", handlers.Register)
+r.With(authLimiter).Post("/api/auth/login", handlers.Login)
+r.With(authLimiter).Post("/api/auth/forgot-password", handlers.ForgotPassword)
+r.With(authLimiter).Post("/api/auth/reset-password", handlers.ResetPassword)
+```
+
+> **Why Redis and not an in-memory counter?**  
+> In-memory counters reset when the server restarts and don't work with multiple instances.
+> Redis `INCR` is atomic — no race conditions even under concurrent requests.
+
+---
+
+### Redis Key Space Summary
+
+```
+bumbleo:
+├── verify:<hex>          → userID          (24h)   email verification
+├── reset:<hex>           → userID          (1h)    password reset
+├── refresh:<userID>      → jwt-string      (7d)    active session
+├── queue                 → [sessionID...]  (none)  matchmaking list
+├── room:<roomID>         → {peerA,peerB}   (2h)    active room
+└── rl:auth:<ip>          → count           (15min) rate limit counter
+```
+
+---
+
 ## ⚙️ Environment Variables
 
 Create a `.env` file in the **project root** (one level above `backend/`):
