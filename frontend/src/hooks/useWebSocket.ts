@@ -5,7 +5,7 @@ import { useAppDispatch, useAppSelector } from '@/store';
 import { setSessionId, setConnected } from '@/store/userSlice';
 import { setMatched, addMessage, peerLeft, setStatus } from '@/store/chatSlice';
 import { WSMessage } from '@/types';
-import { getAccessToken } from '@/lib/api';
+import { getAccessToken, refreshAccessToken } from '@/lib/api';
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080/ws';
 
@@ -26,9 +26,15 @@ export function useWebSocket(onMessage?: MessageHandler) {
     onMessageRef.current = onMessage;
   }, [onMessage]);
 
-  const connect = useCallback(() => {
-    const token = getAccessToken();
+  const connect = useCallback(async () => {
+    let token = getAccessToken();
     if (!token) return;
+
+    // If we're reconnecting, the token might be expired. Preemptively refresh it.
+    if (reconnectAttempts.current > 0) {
+      token = await refreshAccessToken();
+      if (!token) return;
+    }
 
     const ws = new WebSocket(`${WS_URL}?token=${token}`);
     wsRef.current = ws;
